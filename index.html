@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Medición de Espesores en Ductos | NDT</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="brand-mark">NDT</span>
+        <div>
+          <h1>Medición de Espesores en Ductos</h1>
+          <p class="subtitle">Registro, seguimiento y análisis estadístico de inspecciones</p>
+        </div>
+      </div>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="measurements">Mediciones</button>
+        <button class="tab-btn" data-tab="register">Registrar</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Dashboard -->
+    <section id="dashboard" class="tab-panel active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-label">Total mediciones</span>
+          <span class="stat-value" id="stat-total">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Ductos inspeccionados</span>
+          <span class="stat-value" id="stat-ducts">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Espesor promedio (mm)</span>
+          <span class="stat-value" id="stat-avg">0.00</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Pérdida promedio</span>
+          <span class="stat-value" id="stat-loss">0.0%</span>
+        </div>
+        <div class="stat-card alert">
+          <span class="stat-label">Puntos críticos</span>
+          <span class="stat-value" id="stat-critical">0</span>
+          <span class="stat-hint">Pérdida &gt; 30%</span>
+        </div>
+        <div class="stat-card warn">
+          <span class="stat-label">En advertencia</span>
+          <span class="stat-value" id="stat-warning">0</span>
+          <span class="stat-hint">Pérdida 10-30%</span>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Distribución de espesores (mm)</h3>
+          <canvas id="chart-distribution"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Estado por clasificación</h3>
+          <canvas id="chart-status"></canvas>
+        </div>
+        <div class="chart-card wide">
+          <h3>Evolución temporal (promedio mensual)</h3>
+          <canvas id="chart-timeline"></canvas>
+        </div>
+        <div class="chart-card wide">
+          <h3>Espesor mínimo por ducto</h3>
+          <canvas id="chart-ducts"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Measurements Table -->
+    <section id="measurements" class="tab-panel">
+      <div class="toolbar">
+        <input type="search" id="search-input" placeholder="Buscar por ducto, ubicación o inspector..." />
+        <select id="filter-status">
+          <option value="">Todos los estados</option>
+          <option value="ok">Aceptable</option>
+          <option value="warning">Advertencia</option>
+          <option value="critical">Crítico</option>
+        </select>
+        <button id="btn-export" class="btn btn-secondary">Exportar CSV</button>
+        <button id="btn-clear" class="btn btn-danger">Borrar todo</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Ducto</th>
+              <th>Ubicación</th>
+              <th>Nominal (mm)</th>
+              <th>Medido (mm)</th>
+              <th>Pérdida</th>
+              <th>Estado</th>
+              <th>Inspector</th>
+              <th>Método</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="measurements-body"></tbody>
+        </table>
+        <p id="empty-state" class="empty-state">Sin mediciones registradas. Añade la primera desde la pestaña "Registrar".</p>
+      </div>
+    </section>
+
+    <!-- Register form -->
+    <section id="register" class="tab-panel">
+      <form id="measurement-form" class="form-card">
+        <h2>Nueva medición</h2>
+        <div class="form-grid">
+          <label>
+            <span>Ducto / TAG</span>
+            <input type="text" name="duct" required placeholder="Ej: P-101" />
+          </label>
+          <label>
+            <span>Ubicación / Punto</span>
+            <input type="text" name="location" required placeholder="Ej: Codo norte, km 3.2" />
+          </label>
+          <label>
+            <span>Espesor nominal (mm)</span>
+            <input type="number" name="nominal" step="0.01" min="0" required placeholder="Ej: 9.50" />
+          </label>
+          <label>
+            <span>Espesor medido (mm)</span>
+            <input type="number" name="measured" step="0.01" min="0" required placeholder="Ej: 8.70" />
+          </label>
+          <label>
+            <span>Fecha de inspección</span>
+            <input type="date" name="date" required />
+          </label>
+          <label>
+            <span>Inspector</span>
+            <input type="text" name="inspector" required placeholder="Nombre" />
+          </label>
+          <label>
+            <span>Método</span>
+            <select name="method" required>
+              <option value="UT">Ultrasonido (UT)</option>
+              <option value="RT">Radiografía (RT)</option>
+              <option value="PEC">Corrientes parásitas (PEC)</option>
+              <option value="MFL">MFL</option>
+              <option value="Visual">Visual</option>
+            </select>
+          </label>
+          <label>
+            <span>Temperatura (°C)</span>
+            <input type="number" name="temperature" step="0.1" placeholder="Opcional" />
+          </label>
+          <label class="full">
+            <span>Observaciones</span>
+            <textarea name="notes" rows="2" placeholder="Opcional"></textarea>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="btn-seed" class="btn btn-secondary">Cargar datos de ejemplo</button>
+          <button type="submit" class="btn btn-primary">Guardar medición</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container">
+      <small>Datos almacenados localmente en el navegador. NDT · Pruebas</small>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
