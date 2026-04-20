@@ -1,24 +1,63 @@
 (() => {
-  const STORAGE_KEY = 'ndt-duct-measurements-v1';
+  const SUPABASE_URL = 'https://aqmhltdlukponiqcdwpz.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxbWhsdGRsdWtwb25pcWNkd3B6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2Mzg3NTEsImV4cCI6MjA5MjIxNDc1MX0.5cLd5MRJVE2xHoWlkfEcn48Poc1fdxblNsbKYPVuZLc';
+  const TABLE = 'measurements';
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const state = {
-    measurements: loadMeasurements(),
+    measurements: [],
     filter: { text: '', status: '' },
     charts: {},
   };
 
-  /* ---------- Persistence ---------- */
-  function loadMeasurements() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+  const statusEl = document.getElementById('connection-status');
+  function setStatus(kind, text) {
+    statusEl.className = 'connection-status ' + kind;
+    statusEl.textContent = text;
   }
 
-  function saveMeasurements() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.measurements));
+  /* ---------- Supabase data access ---------- */
+  async function fetchMeasurements() {
+    const { data, error } = await sb
+      .from(TABLE)
+      .select('*')
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function insertMeasurement(entry) {
+    const { data, error } = await sb.from(TABLE).insert(entry).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  async function insertManyMeasurements(entries) {
+    const { error } = await sb.from(TABLE).insert(entries);
+    if (error) throw error;
+  }
+
+  async function deleteMeasurement(id) {
+    const { error } = await sb.from(TABLE).delete().eq('id', id);
+    if (error) throw error;
+  }
+
+  async function deleteAllMeasurements() {
+    const { error } = await sb.from(TABLE).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) throw error;
+  }
+
+  async function reload() {
+    try {
+      state.measurements = await fetchMeasurements();
+      setStatus('online', 'Conectado');
+    } catch (err) {
+      console.error(err);
+      setStatus('offline', 'Sin conexión');
+      alert('Error al contactar la base de datos: ' + err.message);
+    }
+    renderAll();
   }
 
   /* ---------- Domain helpers ---------- */
@@ -45,6 +84,10 @@
     return d.toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' });
   }
 
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
   /* ---------- Tabs ---------- */
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -59,13 +102,15 @@
   const form = document.getElementById('measurement-form');
   form.querySelector('input[name="date"]').valueAsDate = new Date();
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Guardando…';
     const data = Object.fromEntries(new FormData(form).entries());
     const nominal = parseFloat(data.nominal);
     const measured = parseFloat(data.measured);
     const entry = {
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
       duct: data.duct.trim(),
       location: data.location.trim(),
       nominal,
@@ -76,21 +121,35 @@
       temperature: data.temperature ? parseFloat(data.temperature) : null,
       notes: data.notes ? data.notes.trim() : '',
       status: classify(nominal, measured),
-      createdAt: new Date().toISOString(),
     };
-    state.measurements.push(entry);
-    saveMeasurements();
-    form.reset();
-    form.querySelector('input[name="date"]').valueAsDate = new Date();
-    renderAll();
-    switchTab('measurements');
+    try {
+      await insertMeasurement(entry);
+      form.reset();
+      form.querySelector('input[name="date"]').valueAsDate = new Date();
+      await reload();
+      switchTab('measurements');
+    } catch (err) {
+      alert('No se pudo guardar: ' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Guardar medición';
+    }
   });
 
-  document.getElementById('btn-seed').addEventListener('click', () => {
+  document.getElementById('btn-seed').addEventListener('click', async () => {
     if (state.measurements.length && !confirm('¿Añadir datos de ejemplo a los registros existentes?')) return;
-    state.measurements.push(...generateSampleData());
-    saveMeasurements();
-    renderAll();
+    const btn = document.getElementById('btn-seed');
+    btn.disabled = true;
+    btn.textContent = 'Cargando…';
+    try {
+      await insertManyMeasurements(generateSampleData());
+      await reload();
+    } catch (err) {
+      alert('No se pudo cargar ejemplo: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Cargar datos de ejemplo';
+    }
   });
 
   /* ---------- Table ---------- */
@@ -109,23 +168,27 @@
     renderTable();
   });
 
-  tbody.addEventListener('click', (e) => {
+  tbody.addEventListener('click', async (e) => {
     const btn = e.target.closest('.row-action');
     if (!btn) return;
     const id = btn.dataset.id;
-    if (confirm('¿Eliminar esta medición?')) {
-      state.measurements = state.measurements.filter((m) => m.id !== id);
-      saveMeasurements();
-      renderAll();
+    if (!confirm('¿Eliminar esta medición?')) return;
+    try {
+      await deleteMeasurement(id);
+      await reload();
+    } catch (err) {
+      alert('No se pudo eliminar: ' + err.message);
     }
   });
 
-  document.getElementById('btn-clear').addEventListener('click', () => {
+  document.getElementById('btn-clear').addEventListener('click', async () => {
     if (!state.measurements.length) return;
-    if (confirm('Esto eliminará TODAS las mediciones. ¿Continuar?')) {
-      state.measurements = [];
-      saveMeasurements();
-      renderAll();
+    if (!confirm('Esto eliminará TODAS las mediciones. ¿Continuar?')) return;
+    try {
+      await deleteAllMeasurements();
+      await reload();
+    } catch (err) {
+      alert('No se pudo borrar: ' + err.message);
     }
   });
 
@@ -137,9 +200,9 @@
       if (status && m.status !== status) return false;
       if (!text) return true;
       return (
-        m.duct.toLowerCase().includes(text) ||
-        m.location.toLowerCase().includes(text) ||
-        m.inspector.toLowerCase().includes(text)
+        (m.duct || '').toLowerCase().includes(text) ||
+        (m.location || '').toLowerCase().includes(text) ||
+        (m.inspector || '').toLowerCase().includes(text)
       );
     });
   }
@@ -154,8 +217,8 @@
             <td>${formatDate(m.date)}</td>
             <td><strong>${escapeHtml(m.duct)}</strong></td>
             <td>${escapeHtml(m.location)}</td>
-            <td>${m.nominal.toFixed(2)}</td>
-            <td>${m.measured.toFixed(2)}</td>
+            <td>${Number(m.nominal).toFixed(2)}</td>
+            <td>${Number(m.measured).toFixed(2)}</td>
             <td>${loss}%</td>
             <td><span class="badge ${m.status}">${statusLabel(m.status)}</span></td>
             <td>${escapeHtml(m.inspector)}</td>
@@ -168,16 +231,12 @@
     emptyState.style.display = items.length ? 'none' : 'block';
   }
 
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-
   /* ---------- Dashboard ---------- */
   function renderDashboard() {
     const list = state.measurements;
     const total = list.length;
     const ducts = new Set(list.map((m) => m.duct)).size;
-    const avg = total ? list.reduce((s, m) => s + m.measured, 0) / total : 0;
+    const avg = total ? list.reduce((s, m) => s + Number(m.measured), 0) / total : 0;
     const avgLoss = total ? list.reduce((s, m) => s + lossPercent(m.nominal, m.measured), 0) / total : 0;
     const critical = list.filter((m) => m.status === 'critical').length;
     const warning = list.filter((m) => m.status === 'warning').length;
@@ -212,7 +271,7 @@
       getOrCreateChart('distribution', ctx, emptyChartConfig('bar'));
       return;
     }
-    const values = list.map((m) => m.measured);
+    const values = list.map((m) => Number(m.measured));
     const min = Math.floor(Math.min(...values));
     const max = Math.ceil(Math.max(...values));
     const binCount = Math.min(8, Math.max(4, max - min));
@@ -271,14 +330,14 @@
     const groups = new Map();
     list.forEach((m) => {
       if (!m.date) return;
-      const key = m.date.slice(0, 7);
+      const key = String(m.date).slice(0, 7);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(m);
     });
     const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
     const labels = sorted.map(([k]) => k);
-    const avgData = sorted.map(([, arr]) => arr.reduce((s, m) => s + m.measured, 0) / arr.length);
-    const minData = sorted.map(([, arr]) => Math.min(...arr.map((m) => m.measured)));
+    const avgData = sorted.map(([, arr]) => arr.reduce((s, m) => s + Number(m.measured), 0) / arr.length);
+    const minData = sorted.map(([, arr]) => Math.min(...arr.map((m) => Number(m.measured))));
     getOrCreateChart('timeline', ctx, {
       type: 'line',
       data: {
@@ -300,13 +359,14 @@
     }
     const byDuct = new Map();
     list.forEach((m) => {
-      if (!byDuct.has(m.duct) || byDuct.get(m.duct) > m.measured) {
-        byDuct.set(m.duct, m.measured);
-      }
+      const val = Number(m.measured);
+      if (!byDuct.has(m.duct) || byDuct.get(m.duct) > val) byDuct.set(m.duct, val);
     });
     const entries = [...byDuct.entries()].sort((a, b) => a[1] - b[1]).slice(0, 12);
     const colors = entries.map(([duct]) => {
-      const minM = list.filter((m) => m.duct === duct).reduce((a, b) => (a.measured < b.measured ? a : b));
+      const minM = list
+        .filter((m) => m.duct === duct)
+        .reduce((a, b) => (Number(a.measured) < Number(b.measured) ? a : b));
       return { ok: '#16a34a', warning: '#d97706', critical: '#dc2626' }[minM.status];
     });
     getOrCreateChart('ducts', ctx, {
@@ -394,7 +454,6 @@
       const date = new Date(now);
       date.setDate(date.getDate() - Math.floor(Math.random() * 240));
       items.push({
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random() + i),
         duct: ducts[Math.floor(Math.random() * ducts.length)],
         location: locations[Math.floor(Math.random() * locations.length)],
         nominal,
@@ -405,7 +464,6 @@
         temperature: +(20 + Math.random() * 40).toFixed(1),
         notes: '',
         status: classify(nominal, measured),
-        createdAt: new Date().toISOString(),
       });
     }
     return items;
@@ -421,5 +479,10 @@
     renderDashboard();
   }
 
-  renderAll();
+  /* ---------- Realtime ---------- */
+  sb.channel('measurements-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: TABLE }, () => reload())
+    .subscribe();
+
+  reload();
 })();
