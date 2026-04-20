@@ -18,7 +18,7 @@ Aplicación web para registrar y analizar mediciones de espesor en ductos (END/N
   - Espesor mínimo por ducto.
 - **Tabla** con búsqueda y filtro por estado.
 - **Exportación** a CSV.
-- **Persistencia local** en `localStorage` del navegador.
+- **Persistencia en la nube** vía Supabase (PostgreSQL) con sincronización en tiempo real entre usuarios.
 
 ## Uso
 
@@ -37,4 +37,4 @@ La pestaña **Registrar** incluye un botón para cargar datos de ejemplo.
 
 - HTML + CSS + JavaScript vanilla.
 - [Chart.js](https://www.chartjs.org/) vía CDN para las gráficas.
-- Almacenamiento en `localStorage`.
+- [Supabase JS](https://supabase.com/docs/reference/javascript) como backend (PostgreSQL + Realtime).

@@ -6,6 +6,7 @@
   <title>Medición de Espesores en Ductos | NDT</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <header class="app-header">
@@ -21,6 +22,7 @@
         <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
         <button class="tab-btn" data-tab="measurements">Mediciones</button>
         <button class="tab-btn" data-tab="register">Registrar</button>
+        <span id="connection-status" class="connection-status" title="Estado de conexión">Conectando…</span>
       </nav>
     </div>
   </header>
@@ -170,7 +172,7 @@
 
   <footer class="app-footer">
     <div class="container">
-      <small>Datos almacenados localmente en el navegador. NDT · Pruebas</small>
+      <small>Datos sincronizados en la nube (Supabase). NDT · Pruebas</small>
     </div>
   </footer>
 
